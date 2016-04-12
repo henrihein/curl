@@ -47,7 +47,7 @@ void Curl_cyassl_sha256sum(const unsigned char *tmp, /* input */
                      unsigned char *sha256sum, /* output */
                      size_t unused);
 
-/* Set the API backend definition to Schannel */
+/* Set the API backend definition to CYA */
 #define CURL_SSL_BACKEND CURLSSLBACKEND_CYASSL
 
 /* this backend supports CURLOPT_SSL_CTX_* */
