@@ -183,6 +183,7 @@ static const struct LongShort aliases[]= {
   {"$Q", "proto-default",            TRUE},
   {"$R", "expect100-timeout",        TRUE},
   {"$S", "tftp-no-options",          FALSE},
+  {"$U", "connect-to",               TRUE},
   {"0",   "http1.0",                 FALSE},
   {"01",  "http1.1",                 FALSE},
   {"02",  "http2",                   FALSE},
@@ -228,6 +229,7 @@ static const struct LongShort aliases[]= {
   {"Eq", "cert-status",              FALSE},
   {"Er", "false-start",              FALSE},
   {"Es", "ssl-no-revoke",            FALSE},
+  {"Et", "tcp-fastopen",             FALSE},
   {"f",  "fail",                     FALSE},
   {"F",  "form",                     TRUE},
   {"Fs", "form-string",              TRUE},
@@ -1009,6 +1011,11 @@ ParameterError getparameter(char *flag,    /* f or -long-flag */
       case 'S': /* --tftp-no-options */
         config->tftp_no_options = toggle;
         break;
+      case 'U': /* --connect-to */
+        err = add2list(&config->connect_to, nextarg);
+        if(err)
+          return err;
+        break;
       }
       break;
     case '#': /* --progress-bar */
@@ -1407,6 +1414,10 @@ ParameterError getparameter(char *flag,    /* f or -long-flag */
       case 's': /* --ssl-no-revoke */
         if(curlinfo->features & CURL_VERSION_SSL)
           config->ssl_no_revoke = TRUE;
+        break;
+
+      case 't': /* --tcp-fastopen */
+        config->tcp_fastopen = TRUE;
         break;
 
       default: /* certificate file */

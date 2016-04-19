@@ -373,6 +373,7 @@ typedef curlioerr (*curl_ioctl_callback)(CURL *handle,
                                          int cmd,
                                          void *clientp);
 
+#ifndef CURL_DID_MEMORY_FUNC_TYPEDEFS
 /*
  * The following typedef's are signatures of malloc, free, realloc, strdup and
  * calloc respectively.  Function pointers of these types can be passed to the
@@ -386,6 +387,7 @@ typedef char *(*curl_strdup_callback)(const char *str);
 typedef void *(*curl_calloc_callback)(size_t nmemb, size_t size);
 
 #define CURL_DID_MEMORY_FUNC_TYPEDEFS
+#endif
 
 /* the kind of data that is passed to information_callback*/
 typedef enum {
@@ -537,6 +539,8 @@ typedef enum {
   CURLE_SSL_PINNEDPUBKEYNOTMATCH, /* 90 - specified pinned public key did not
                                      match */
   CURLE_SSL_INVALIDCERTSTATUS,   /* 91 - invalid certificate status */
+  CURLE_HTTP2_STREAM,            /* 92 - stream error in HTTP/2 framing layer
+                                    */
   CURL_LAST /* never use! */
 } CURLcode;
 
@@ -1677,6 +1681,13 @@ typedef enum {
 
   /* Do not send any tftp option requests to the server */
   CINIT(TFTP_NO_OPTIONS, LONG, 242),
+
+  /* Linked-list of host:port:connect-to-host:connect-to-port,
+     overrides the URL's host:port (only for the network layer) */
+  CINIT(CONNECT_TO, STRINGPOINT, 243),
+
+  /* Set TCP Fast Open */
+  CINIT(TCP_FASTOPEN, LONG, 244),
 
   CURLOPT_LASTENTRY /* the last unused */
 } CURLoption;

@@ -375,10 +375,12 @@ struct ssl_config_data {
 /* information stored about one single SSL session */
 struct curl_ssl_session {
   char *name;       /* host name for which this ID was used */
+  char *conn_to_host; /* host name for the connection (may be NULL) */
   void *sessionid;  /* as returned from the SSL layer */
   size_t idsize;    /* if known, otherwise 0 */
   long age;         /* just a number, the higher the more recent */
-  int remote_port;  /* remote port to connect to */
+  int remote_port;  /* remote port */
+  int conn_to_port; /* remote port for the connection (may be -1) */
   struct ssl_config_data ssl_config; /* setup for this session */
 };
 
@@ -490,6 +492,10 @@ struct ConnectBits {
   /* always modify bits.close with the connclose() and connkeep() macros! */
   bool close; /* if set, we close the connection after this request */
   bool reuse; /* if set, this is a re-used connection */
+  bool conn_to_host; /* if set, this connection has a "connect to host"
+                        that overrides the host in the URL */
+  bool conn_to_port; /* if set, this connection has a "connect to port"
+                        that overrides the port in the URL (remote port) */
   bool proxy; /* if set, this transfer is done through a proxy - any type */
   bool httpproxy;    /* if set, this transfer is done through a http proxy */
   bool user_passwd;    /* do we use user+password for this connection? */
@@ -538,6 +544,8 @@ struct ConnectBits {
                  connection */
   bool type_set;  /* type= was used in the URL */
   bool multiplex; /* connection is multiplexed */
+
+  bool tcp_fastopen; /* use TCP Fast Open */
 };
 
 struct hostname {
@@ -874,10 +882,14 @@ struct connectdata {
   int socktype;  /* SOCK_STREAM or SOCK_DGRAM */
 
   struct hostname host;
+  struct hostname conn_to_host; /* the host to connect to. valid only if
+                                   bits.conn_to_host is set */
   struct hostname proxy;
 
   long port;       /* which port to use locally */
-  int remote_port; /* what remote port to connect to, not the proxy port! */
+  int remote_port; /* the remote port, not the proxy port! */
+  int conn_to_port; /* the remote port to connect to. valid only if
+                       bits.conn_to_port is set */
 
   /* 'primary_ip' and 'primary_port' get filled with peer's numerical
      ip address and port number whenever an outgoing connection is
@@ -1226,11 +1238,13 @@ struct UrlState {
                                 bytes / second */
   bool this_is_a_follow; /* this is a followed Location: request */
 
-  char *first_host; /* if set, this should be the host name that we will
+  char *first_host; /* host name of the first (not followed) request.
+                       if set, this should be the host name that we will
                        sent authorization to, no else. Used to make Location:
                        following not keep sending user+password... This is
                        strdup() data.
                     */
+  int first_remote_port; /* remote port of the first (not followed) request */
   struct curl_ssl_session *session; /* array of 'max_ssl_sessions' size */
   long sessionage;                  /* number of the most recent session */
   char *tempwrite;      /* allocated buffer to keep data in when a write
@@ -1314,9 +1328,9 @@ struct UrlState {
   curl_off_t infilesize; /* size of file to upload, -1 means unknown.
                             Copied from set.filesize at start of operation */
 
-  int drain; /* Increased when this stream has data to read, even if its
-                socket not necessarily is readable. Decreased when
-                checked. */
+  size_t drain; /* Increased when this stream has data to read, even if its
+                   socket is not necessarily is readable. Decreased when
+                   checked. */
   bool done; /* set to FALSE when Curl_do() is called and set to TRUE when
                 Curl_done() is called, to prevent Curl_done() to get invoked
                 twice when the multi interface is used. */
@@ -1528,6 +1542,8 @@ struct UserDefined {
   struct curl_slist *telnet_options; /* linked list of telnet options */
   struct curl_slist *resolve;     /* list of names to add/remove from
                                      DNS cache */
+  struct curl_slist *connect_to; /* list of host:port mappings to override
+                                    the hostname and port to connect to */
   curl_TimeCond timecondition; /* kind of time/date comparison */
   time_t timevalue;       /* what time to compare with */
   Curl_HttpReq httpreq;   /* what kind of HTTP request (if any) is this */
@@ -1575,7 +1591,6 @@ struct UserDefined {
   bool http_set_referer; /* is a custom referer used */
   bool http_auto_referer; /* set "correct" referer when following location: */
   bool opt_no_body;      /* as set with CURLOPT_NOBODY */
-  bool set_port;         /* custom port number used */
   bool upload;           /* upload request */
   enum CURL_NETRC_OPTION
        use_netrc;        /* defined in include/curl.h */
@@ -1637,6 +1652,7 @@ struct UserDefined {
   bool tcp_keepalive;    /* use TCP keepalives */
   long tcp_keepidle;     /* seconds in idle before sending keepalive probe */
   long tcp_keepintvl;    /* seconds between TCP keepalive probes */
+  bool tcp_fastopen;     /* use TCP Fast Open */
 
   size_t maxconnects;  /* Max idle connections in the connection cache */
 

@@ -794,6 +794,9 @@ static CURLcode operate_do(struct GlobalConfig *global,
         if(config->tcp_nodelay)
           my_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
 
+        if(config->tcp_fastopen)
+          my_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+
         /* where to store */
         my_setopt(curl, CURLOPT_WRITEDATA, &outs);
         if(metalink || !config->use_metalink)
@@ -1304,6 +1307,10 @@ static CURLcode operate_do(struct GlobalConfig *global,
         if(config->resolve)
           /* new in 7.21.3 */
           my_setopt_slist(curl, CURLOPT_RESOLVE, config->resolve);
+
+        if(config->connect_to)
+          /* new in 7.49.0 */
+          my_setopt_slist(curl, CURLOPT_CONNECT_TO, config->connect_to);
 
         /* new in 7.21.4 */
         if(curlinfo->features & CURL_VERSION_TLSAUTH_SRP) {
