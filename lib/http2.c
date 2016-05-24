@@ -23,7 +23,6 @@
 #include "curl_setup.h"
 
 #ifdef USE_NGHTTP2
-#include "curl_printf.h"
 #include <nghttp2/nghttp2.h>
 #include "urldata.h"
 #include "http2.h"
@@ -37,7 +36,8 @@
 #include "connect.h"
 #include "strtoofft.h"
 
-/* The last #include files should be: */
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -862,7 +862,7 @@ static int on_header(nghttp2_session *session, const nghttp2_frame *frame,
 
     Curl_add_buffer(stream->trailer_recvbuf, &n, sizeof(n));
     Curl_add_buffer(stream->trailer_recvbuf, name, namelen);
-    Curl_add_buffer(stream->trailer_recvbuf, ":", 1);
+    Curl_add_buffer(stream->trailer_recvbuf, ": ", 2);
     Curl_add_buffer(stream->trailer_recvbuf, value, valuelen);
     Curl_add_buffer(stream->trailer_recvbuf, "\r\n\0", 3);
 
@@ -877,7 +877,7 @@ static int on_header(nghttp2_session *session, const nghttp2_frame *frame,
     stream->status_code = decode_status_code(value, valuelen);
     DEBUGASSERT(stream->status_code != -1);
 
-    Curl_add_buffer(stream->header_recvbuf, "HTTP/2.0 ", 9);
+    Curl_add_buffer(stream->header_recvbuf, "HTTP/2 ", 7);
     Curl_add_buffer(stream->header_recvbuf, value, valuelen);
     /* the space character after the status code is mandatory */
     Curl_add_buffer(stream->header_recvbuf, " \r\n", 3);
@@ -894,7 +894,7 @@ static int on_header(nghttp2_session *session, const nghttp2_frame *frame,
      received, and this is not pseudo-header field . */
   /* convert to a HTTP1-style header */
   Curl_add_buffer(stream->header_recvbuf, name, namelen);
-  Curl_add_buffer(stream->header_recvbuf, ":", 1);
+  Curl_add_buffer(stream->header_recvbuf, ": ", 2);
   Curl_add_buffer(stream->header_recvbuf, value, valuelen);
   Curl_add_buffer(stream->header_recvbuf, "\r\n", 2);
   /* if we receive data for another handle, wake that up */

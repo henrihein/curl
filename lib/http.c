@@ -77,9 +77,9 @@
 #include "pipeline.h"
 #include "http2.h"
 #include "connect.h"
-#include "curl_printf.h"
 
-/* The last #include files should be: */
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -145,7 +145,7 @@ const struct Curl_handler Curl_handler_https = {
   ZERO_NULL,                            /* readwrite */
   PORT_HTTPS,                           /* defport */
   CURLPROTO_HTTPS,                      /* protocol */
-  PROTOPT_SSL | PROTOPT_CREDSPERREQUEST /* flags */
+  PROTOPT_SSL | PROTOPT_CREDSPERREQUEST | PROTOPT_ALPN_NPN /* flags */
 };
 #endif
 
@@ -1454,8 +1454,10 @@ CURLcode Curl_http_done(struct connectdata *conn,
      data->state.negotiate.state == GSS_AUTHSENT) {
     /* add forbid re-use if http-code != 401/407 as a WA only needed for
      * 401/407 that signal auth failure (empty) otherwise state will be RECV
-     * with current code */
-    if((data->req.httpcode != 401) && (data->req.httpcode != 407))
+     * with current code.
+     * Do not close CONNECT_ONLY connections. */
+    if((data->req.httpcode != 401) && (data->req.httpcode != 407) &&
+       !data->set.connect_only)
       connclose(conn, "Negotiate transfer completed");
     Curl_cleanup_negotiate(data);
   }
@@ -1914,6 +1916,10 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
       aprintf("Accept-Encoding: %s\r\n", data->set.str[STRING_ENCODING]);
     if(!conn->allocptr.accept_encoding)
       return CURLE_OUT_OF_MEMORY;
+  }
+  else {
+    Curl_safefree(conn->allocptr.accept_encoding);
+    conn->allocptr.accept_encoding = NULL;
   }
 
 #ifdef HAVE_LIBZ

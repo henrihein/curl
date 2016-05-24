@@ -56,7 +56,6 @@
 #include <inet.h>
 #endif
 
-#include "curl_printf.h"
 #include "urldata.h"
 #include "sendf.h"
 #include "if2ip.h"
@@ -74,7 +73,8 @@
 #include "conncache.h"
 #include "multihandle.h"
 
-/* The last #include files should be: */
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -764,6 +764,7 @@ CURLcode Curl_is_connected(struct connectdata *conn,
     rc = Curl_socket_ready(CURL_SOCKET_BAD, conn->tempsock[i], 0);
 
     if(rc == 0) { /* no connection yet */
+      error = 0;
       if(curlx_tvdiff(now, conn->connecttime) >= conn->timeoutms_per_addr) {
         infof(data, "After %ldms connect time, move on!\n",
               conn->timeoutms_per_addr);
@@ -1008,7 +1009,7 @@ static CURLcode singleipconnect(struct connectdata *conn,
                                 curl_socket_t *sockp)
 {
   struct Curl_sockaddr_ex addr;
-  int rc;
+  int rc = -1;
   int error = 0;
   bool isconnected = FALSE;
   struct SessionHandle *data = conn->data;

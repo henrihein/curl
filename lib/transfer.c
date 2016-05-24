@@ -75,9 +75,9 @@
 #include "multiif.h"
 #include "connect.h"
 #include "non-ascii.h"
-#include "curl_printf.h"
 
-/* The last #include files should be: */
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
 #include "memdebug.h"
 
@@ -1385,6 +1385,16 @@ CURLcode Curl_pretransfer(struct SessionHandle *data)
        consider to be fine */
     data->state.authhost.picked &= data->state.authhost.want;
     data->state.authproxy.picked &= data->state.authproxy.want;
+
+    if(data->set.wildcardmatch) {
+      struct WildcardData *wc = &data->wildcard;
+      if(!wc->filelist) {
+        result = Curl_wildcard_init(wc); /* init wildcard structures */
+        if(result)
+          return CURLE_OUT_OF_MEMORY;
+      }
+    }
+
   }
 
   return result;

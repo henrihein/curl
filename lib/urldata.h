@@ -290,7 +290,6 @@ struct ssl_connect_data {
   mbedtls_ctr_drbg_context ctr_drbg;
   mbedtls_entropy_context entropy;
   mbedtls_ssl_context ssl;
-  mbedtls_ssl_session ssn;
   int server_fd;
   mbedtls_x509_crt cacert;
   mbedtls_x509_crt clicert;
@@ -302,7 +301,6 @@ struct ssl_connect_data {
   ctr_drbg_context ctr_drbg;
   entropy_context entropy;
   ssl_context ssl;
-  ssl_session ssn;
   int server_fd;
   x509_crt cacert;
   x509_crt clicert;
@@ -546,6 +544,8 @@ struct ConnectBits {
   bool multiplex; /* connection is multiplexed */
 
   bool tcp_fastopen; /* use TCP Fast Open */
+  bool tls_enable_npn;  /* TLS NPN extension? */
+  bool tls_enable_alpn; /* TLS ALPN extension? */
 };
 
 struct hostname {
@@ -817,7 +817,7 @@ struct Curl_handler {
                                         url query strings (?foo=bar) ! */
 #define PROTOPT_CREDSPERREQUEST (1<<7) /* requires login credentials per
                                           request instead of per connection */
-
+#define PROTOPT_ALPN_NPN (1<<8) /* set ALPN and/or NPN for this */
 
 /* return the count of bytes sent, or -1 on error */
 typedef ssize_t (Curl_send)(struct connectdata *conn, /* connection data */
@@ -832,6 +832,20 @@ typedef ssize_t (Curl_recv)(struct connectdata *conn, /* connection data */
                             char *buf,                /* store data here */
                             size_t len,               /* max amount to read */
                             CURLcode *err);           /* error to return */
+
+#ifdef USE_RECV_BEFORE_SEND_WORKAROUND
+struct postponed_data {
+  char *buffer;          /* Temporal store for received data during
+                            sending, must be freed */
+  size_t allocated_size; /* Size of temporal store */
+  size_t recv_size;      /* Size of received data during sending */
+  size_t recv_processed; /* Size of processed part of postponed data */
+#ifdef DEBUGBUILD
+  curl_socket_t bindsock;/* Structure must be bound to specific socket,
+                            used only for DEBUGASSERT */
+#endif /* DEBUGBUILD */
+};
+#endif /* USE_RECV_BEFORE_SEND_WORKAROUND */
 
 /*
  * The connectdata struct contains all fields and variables that should be
@@ -931,6 +945,9 @@ struct connectdata {
   Curl_recv *recv[2];
   Curl_send *send[2];
 
+#ifdef USE_RECV_BEFORE_SEND_WORKAROUND
+  struct postponed_data postponed[2]; /* two buffers for two sockets */
+#endif /* USE_RECV_BEFORE_SEND_WORKAROUND */
   struct ssl_connect_data ssl[2]; /* this is for ssl-stuff */
   struct ssl_config_data ssl_config;
   bool tls_upgraded;
@@ -1656,8 +1673,8 @@ struct UserDefined {
 
   size_t maxconnects;  /* Max idle connections in the connection cache */
 
-  bool ssl_enable_npn;  /* TLS NPN extension? */
-  bool ssl_enable_alpn; /* TLS ALPN extension? */
+  bool ssl_enable_npn;      /* TLS NPN extension? */
+  bool ssl_enable_alpn;     /* TLS ALPN extension? */
   bool path_as_is;      /* allow dotdots? */
   bool pipewait;        /* wait for pipe/multiplex status before starting a
                            new connection */

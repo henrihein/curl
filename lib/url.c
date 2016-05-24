@@ -130,9 +130,9 @@ bool curl_win32_idn_to_ascii(const char *in, char **out);
 #include "pipeline.h"
 #include "dotdot.h"
 #include "strdup.h"
+/* The last 3 #include files should be in this order */
 #include "curl_printf.h"
 #include "curl_memory.h"
-/* The last #include file should be: */
 #include "memdebug.h"
 
 /* Local static prototypes */
@@ -482,6 +482,12 @@ CURLcode Curl_close(struct SessionHandle *data)
     Curl_share_lock(data, CURL_LOCK_DATA_SHARE, CURL_LOCK_ACCESS_SINGLE);
     data->share->dirty--;
     Curl_share_unlock(data, CURL_LOCK_DATA_SHARE);
+  }
+
+  if(data->set.wildcardmatch) {
+    /* destruct wildcard structures if it is needed */
+    struct WildcardData *wc = &data->wildcard;
+    Curl_wildcard_dtor(wc);
   }
 
   Curl_freeset(data);
@@ -2072,12 +2078,16 @@ CURLcode Curl_setopt(struct SessionHandle *data, CURLoption option,
 #endif
     break;
   case CURLOPT_PINNEDPUBLICKEY:
+#ifdef have_curlssl_pinnedpubkey /* only by supported backends */
     /*
      * Set pinned public key for SSL connection.
      * Specify file name of the public key in DER format.
      */
     result = setstropt(&data->set.str[STRING_SSL_PINNEDPUBLICKEY],
                        va_arg(param, char *));
+#else
+    result = CURLE_NOT_BUILT_IN;
+#endif
     break;
   case CURLOPT_CAINFO:
     /*
@@ -2694,6 +2704,45 @@ CURLcode Curl_setopt(struct SessionHandle *data, CURLoption option,
   return result;
 }
 
+#ifdef USE_RECV_BEFORE_SEND_WORKAROUND
+static void conn_reset_postponed_data(struct connectdata *conn, int num)
+{
+  struct postponed_data * const psnd = &(conn->postponed[num]);
+  if(psnd->buffer) {
+    DEBUGASSERT(psnd->allocated_size > 0);
+    DEBUGASSERT(psnd->recv_size <= psnd->allocated_size);
+    DEBUGASSERT(psnd->recv_size ?
+                (psnd->recv_processed < psnd->recv_size) :
+                (psnd->recv_processed == 0));
+    DEBUGASSERT(psnd->bindsock != CURL_SOCKET_BAD);
+    free(psnd->buffer);
+    psnd->buffer = NULL;
+    psnd->allocated_size = 0;
+    psnd->recv_size = 0;
+    psnd->recv_processed = 0;
+#ifdef DEBUGBUILD
+    psnd->bindsock = CURL_SOCKET_BAD; /* used only for DEBUGASSERT */
+#endif /* DEBUGBUILD */
+  }
+  else {
+    DEBUGASSERT (psnd->allocated_size == 0);
+    DEBUGASSERT (psnd->recv_size == 0);
+    DEBUGASSERT (psnd->recv_processed == 0);
+    DEBUGASSERT (psnd->bindsock == CURL_SOCKET_BAD);
+  }
+}
+
+static void conn_reset_all_postponed_data(struct connectdata *conn)
+{
+  conn_reset_postponed_data(conn, 0);
+  conn_reset_postponed_data(conn, 1);
+}
+#else  /* ! USE_RECV_BEFORE_SEND_WORKAROUND */
+/* Use "do-nothing" macros instead of functions when workaround not used */
+#define conn_reset_postponed_data(c,n) do {} WHILE_FALSE
+#define conn_reset_all_postponed_data(c) do {} WHILE_FALSE
+#endif /* ! USE_RECV_BEFORE_SEND_WORKAROUND */
+
 static void conn_free(struct connectdata *conn)
 {
   if(!conn)
@@ -2743,6 +2792,8 @@ static void conn_free(struct connectdata *conn)
   Curl_safefree(conn->conn_to_host.rawalloc); /* host name buffer */
   Curl_safefree(conn->proxy.rawalloc); /* proxy name buffer */
   Curl_safefree(conn->master_buffer);
+
+  conn_reset_all_postponed_data(conn);
 
   Curl_llist_destroy(conn->send_pipe, NULL);
   Curl_llist_destroy(conn->recv_pipe, NULL);
@@ -3204,8 +3255,8 @@ ConnectionExists(struct SessionHandle *data,
       size_t pipeLen;
 
       /*
-       * Note that if we use a HTTP proxy, we check connections to that
-       * proxy and not to the actual remote server.
+       * Note that if we use a HTTP proxy in normal mode (no tunneling), we
+       * check connections to that proxy and not to the actual remote server.
        */
       check = curr->ptr;
       curr = curr->next;
@@ -3286,6 +3337,15 @@ ConnectionExists(struct SessionHandle *data,
         /* don't do mixed proxy and non-proxy connections */
         continue;
 
+      if(needle->bits.proxy &&
+         (needle->proxytype != check->proxytype ||
+          needle->bits.httpproxy != check->bits.httpproxy ||
+          needle->bits.tunnel_proxy != check->bits.tunnel_proxy ||
+          !Curl_raw_equal(needle->proxy.name, check->proxy.name) ||
+          needle->port != check->port))
+        /* don't mix connections that use different proxies */
+        continue;
+
       if(needle->bits.conn_to_host != check->bits.conn_to_host)
         /* don't mix connections that use the "connect to host" feature and
          * connections that don't use this feature */
@@ -3332,10 +3392,7 @@ ConnectionExists(struct SessionHandle *data,
       }
 
       if(!needle->bits.httpproxy || (needle->handler->flags&PROTOPT_SSL) ||
-         (needle->bits.httpproxy && check->bits.httpproxy &&
-          needle->bits.tunnel_proxy && check->bits.tunnel_proxy &&
-          Curl_raw_equal(needle->proxy.name, check->proxy.name) &&
-          (needle->port == check->port))) {
+         (needle->bits.httpproxy && needle->bits.tunnel_proxy)) {
         /* The requested connection does not use a HTTP proxy or it uses SSL or
            it is a non-SSL protocol tunneled over the same HTTP proxy name and
            port number */
@@ -3374,16 +3431,10 @@ ConnectionExists(struct SessionHandle *data,
           match = TRUE;
         }
       }
-      else { /* The requested needle connection is using a proxy,
-                is the checked one using the same host, port and type? */
-        if(check->bits.proxy &&
-           (needle->proxytype == check->proxytype) &&
-           (needle->bits.tunnel_proxy == check->bits.tunnel_proxy) &&
-           Curl_raw_equal(needle->proxy.name, check->proxy.name) &&
-           needle->port == check->port) {
-          /* This is the same proxy connection, use it! */
-          match = TRUE;
-        }
+      else {
+        /* The requested connection is using the same HTTP proxy in normal
+           mode (no tunneling) */
+        match = TRUE;
       }
 
       if(match) {
@@ -3405,6 +3456,10 @@ ConnectionExists(struct SessionHandle *data,
 
         /* Same for Proxy NTLM authentication */
         if(wantProxyNTLMhttp) {
+          /* Both check->proxyuser and check->proxypasswd can be NULL */
+          if(!check->proxyuser || !check->proxypasswd)
+            continue;
+
           if(!strequal(needle->proxyuser, check->proxyuser) ||
              !strequal(needle->proxypasswd, check->proxypasswd))
             continue;
@@ -3851,6 +3906,10 @@ static struct connectdata *allocate_conn(struct SessionHandle *data)
   conn->connection_id = -1;    /* no ID */
   conn->port = -1; /* unknown at this point */
   conn->remote_port = -1; /* unknown */
+#if defined(USE_RECV_BEFORE_SEND_WORKAROUND) && defined(DEBUGBUILD)
+  conn->postponed[0].bindsock = CURL_SOCKET_BAD; /* no file descriptor */
+  conn->postponed[1].bindsock = CURL_SOCKET_BAD; /* no file descriptor */
+#endif /* USE_RECV_BEFORE_SEND_WORKAROUND && DEBUGBUILD */
 
   /* Default protocol-independent behavior doesn't support persistent
      connections, so we set this to force-close. Protocols that support
@@ -5625,6 +5684,9 @@ static void reuse_conn(struct connectdata *old_conn,
   /* persist connection info in session handle */
   Curl_persistconninfo(conn);
 
+  conn_reset_all_postponed_data(old_conn); /* free buffers */
+  conn_reset_all_postponed_data(conn);     /* reset unprocessed data */
+
   /* re-use init */
   conn->bits.reuse = TRUE; /* yes, we're re-using here */
 
@@ -6110,6 +6172,15 @@ static CURLcode create_conn(struct SessionHandle *data,
        be able to do that if we have reached the limit of how many
        connections we are allowed to open. */
     struct connectbundle *bundle = NULL;
+
+    if(conn->handler->flags & PROTOPT_ALPN_NPN) {
+      /* The protocol wants it, so set the bits if enabled in the easy handle
+         (default) */
+      if(data->set.ssl_enable_alpn)
+        conn->bits.tls_enable_alpn = TRUE;
+      if(data->set.ssl_enable_npn)
+        conn->bits.tls_enable_npn = TRUE;
+    }
 
     if(waitpipe)
       /* There is a connection that *might* become usable for pipelining

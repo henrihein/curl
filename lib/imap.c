@@ -80,10 +80,10 @@
 #include "rawstr.h"
 #include "curl_sasl.h"
 #include "warnless.h"
-#include "curl_printf.h"
 
+/* The last 3 #include files should be in this order */
+#include "curl_printf.h"
 #include "curl_memory.h"
-/* The last #include file should be: */
 #include "memdebug.h"
 
 /* Local API functions */
@@ -1796,6 +1796,7 @@ static CURLcode imap_sendf(struct connectdata *conn, const char *fmt, ...)
  */
 static char *imap_atom(const char *str, bool escape_only)
 {
+  /* !checksrc! disable PARENBRACE 1 */
   const char atom_specials[] = "(){ %*]";
   const char *p1;
   char *p2;

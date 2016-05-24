@@ -63,7 +63,7 @@
 
 /* ALPN requires version 8.1 of the  Windows SDK, which was
    shipped with Visual Studio 2013, aka _MSC_VER 1800*/
-#if defined(_MSC_VER) && (_MSC_VER >= 1800)
+#if defined(_MSC_VER) && (_MSC_VER >= 1800) && !defined(_USING_V110_SDK71_)
 #  define HAS_ALPN 1
 #endif
 
@@ -242,7 +242,7 @@ schannel_connect_step1(struct connectdata *conn, int sockindex)
   }
 
 #ifdef HAS_ALPN
-  if(data->set.ssl_enable_alpn) {
+  if(conn->bits.tls_enable_alpn) {
     int cur = 0;
     int list_start_index = 0;
     unsigned int* extension_len = NULL;
@@ -641,7 +641,7 @@ schannel_connect_step3(struct connectdata *conn, int sockindex)
   }
 
 #ifdef HAS_ALPN
-  if(data->set.ssl_enable_alpn) {
+  if(conn->bits.tls_enable_alpn) {
     sspi_status = s_pSecFn->QueryContextAttributes(&connssl->ctxt->ctxt_handle,
       SECPKG_ATTR_APPLICATION_PROTOCOL, &alpn_result);
 

@@ -42,9 +42,9 @@
 #include "multihandle.h"
 #include "pipeline.h"
 #include "sigpipe.h"
+/* The last 3 #include files should be in this order */
 #include "curl_printf.h"
 #include "curl_memory.h"
-/* The last #include file should be: */
 #include "memdebug.h"
 
 /*
@@ -1466,7 +1466,9 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
       struct connectdata *conn = data->easy_conn;
       const char *hostname;
 
-      if(conn->bits.conn_to_host)
+      if(conn->bits.proxy)
+        hostname = conn->proxy.name;
+      else if(conn->bits.conn_to_host)
         hostname = conn->conn_to_host.name;
       else
         hostname = conn->host.name;
@@ -1480,7 +1482,7 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
         conn->async.done = TRUE;
 #endif
         result = CURLE_OK;
-        infof(data, "Hostname was found in DNS cache\n");
+        infof(data, "Hostname '%s' was found in DNS cache\n", hostname);
       }
 
       if(!dns)
@@ -2114,26 +2116,11 @@ CURLMcode curl_multi_perform(CURLM *multi_handle, int *running_handles)
   data=multi->easyp;
   while(data) {
     CURLMcode result;
-    struct WildcardData *wc = &data->wildcard;
     SIGPIPE_VARIABLE(pipe_st);
-
-    if(data->set.wildcardmatch) {
-      if(!wc->filelist) {
-        CURLcode ret = Curl_wildcard_init(wc); /* init wildcard structures */
-        if(ret)
-          return CURLM_OUT_OF_MEMORY;
-      }
-    }
 
     sigpipe_ignore(data, &pipe_st);
     result = multi_runsingle(multi, now, data);
     sigpipe_restore(&pipe_st);
-
-    if(data->set.wildcardmatch) {
-      /* destruct wildcard structures if it is needed */
-      if(wc->state == CURLWC_DONE || result)
-        Curl_wildcard_dtor(wc);
-    }
 
     if(result)
       returncode = result;

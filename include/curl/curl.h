@@ -1684,7 +1684,7 @@ typedef enum {
 
   /* Linked-list of host:port:connect-to-host:connect-to-port,
      overrides the URL's host:port (only for the network layer) */
-  CINIT(CONNECT_TO, STRINGPOINT, 243),
+  CINIT(CONNECT_TO, OBJECTPOINT, 243),
 
   /* Set TCP Fast Open */
   CINIT(TCP_FASTOPEN, LONG, 244),
@@ -2124,6 +2124,11 @@ typedef enum {
   CURLSSLBACKEND_AXTLS = 10,
   CURLSSLBACKEND_MBEDTLS = 11
 } curl_sslbackend;
+
+/* aliases for library clones and renames */
+#define CURLSSLBACKEND_LIBRESSL 1
+#define CURLSSLBACKEND_BORINGSSL 1
+#define CURLSSLBACKEND_WOLFSSL 6
 
 /* Information about the SSL library used and the respective internal SSL
    handle, which can be used to obtain further information regarding the
