@@ -191,7 +191,18 @@ schannel_connect_step1(struct connectdata *conn, int sockindex)
       break;
     }
 
-    /* allocate memory for the re-usable credential handle */
+	/* Now send the SCHANNEL_CRED to the ctx function, if one is specified. */
+	if(data->set.ssl.fsslctx) {
+	    CURLcode result = CURLE_OK;
+	    result = (*data->set.ssl.fsslctx)(data, &schannel_cred,
+										data->set.ssl.fsslctxp);
+	    if(result) {
+		    failf(data, "error signaled by ssl ctx callback");
+		    return result;
+	    }
+	}
+
+	/* allocate memory for the re-usable credential handle */
     connssl->cred = (struct curl_schannel_cred *)
       malloc(sizeof(struct curl_schannel_cred));
     if(!connssl->cred) {
